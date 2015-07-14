@@ -14,26 +14,46 @@
 
 To merge code from 'default' branch to a given branch.
 """
-from mercurial import commands, extensions, util, hg, ui
-repo = hg.repository(ui.ui(), path=".")
+import re
+from mercurial.i18n import _
+from mercurial import cmdutil, hg, ui
+# repo = hg.repository(ui.ui(), path=".")
 
-def repomerge(ui, node = None):
-    """perform merge code action
-    """
-    currentCtx = repo[None].parents()[0]
-    # ui.write(currentCtx.description())
-    currentRev = currentCtx.rev()
+cmdtable = {}
+command = cmdutil.command(cmdtable)
+
+def getMergeDescription(parentDesc):
+    '''Returns merge description - e.g. Story: 12345 | Merge to default
+    '''
+    match = re.search('^((BugId: [0-9]+ \|)|(Story: B-[0-9]+ \|)|(Epic: E-[0-9]+ \|))', parentDesc)
+    return match.group(0) + ' Merge with default'
+
+@command("domerge",
+         [
+          ('r', 'rev', [], _('revision to merge'))],
+          _('hg domerge [-r] REV...'))
+def domergecmd(ui, repo, *revs, **opts):
+    node = (list(revs) + opts.get('rev'))[0]
+    originalCtx = repo[None].parents()[0]
+    originalRev = originalCtx.rev()
+
     ui.write('Updating to revision %s \n' % node)
     hg.updaterepo(repo, node, True)
     defaultRev = repo['default'].rev()
+    
     ui.write('Merging with default revision %s \n' % defaultRev)
     hg.merge(repo, defaultRev)
+
+    #TODO: handle conflict case
+    
     ui.write('Committing after merge... \n')
-    repo.commit('Story: B-12345 | Merge with default') #TODO: enter story name based on ctx.description()
-    ui.write('Revert to original revision %s \n' % currentRev)
-    hg.update(repo, currentRev)
+    commitMsg = getMergeDescription(repo[None].parents()[0].description())
+    
+    ui.write('   Commit message: %s \n' % commitMsg)
+    repo.commit(commitMsg)
 
+    if (originalRev != repo[None].parents()[0].parents()[0].rev()): # update to original rev in case branches are different
+        ui.write('Updating to original revision %s \n' % originalRev)
+        hg.update(repo, originalRev)
 
-cmdtable = {
-    'repo-merge': (repomerge, [], 'Auto merge from default to given repository.')
-}
+    return 0
